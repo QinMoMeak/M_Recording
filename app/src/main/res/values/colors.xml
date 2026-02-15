@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#000000</color>
+    <color name="white">#FFFFFF</color>
+
+    <color name="ios_bg">#F2F4F7</color>
+    <color name="ios_surface">#FFFFFF</color>
+    <color name="ios_surface_soft">#EEF1F5</color>
+    <color name="ios_stroke">#DDE3EA</color>
+    <color name="ios_text_primary">#111827</color>
+    <color name="ios_text_secondary">#6B7280</color>
+    <color name="ios_accent">#0A84FF</color>
+    <color name="ios_accent_pressed">#0069D9</color>
+    <color name="ios_danger">#FF3B30</color>
+    <color name="ios_disabled">#D1D5DB</color>
+    <color name="ios_toggle_on">#E8F1FF</color>
+    <color name="ios_card_shadow">#E2E8F0</color>
+</resources>
