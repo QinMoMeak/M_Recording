@@ -2,6 +2,7 @@
 
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
+import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
@@ -11,6 +12,8 @@ import java.util.concurrent.TimeUnit
 
 class SiliconFlowAsrService {
     data class ApiResult(val success: Boolean, val text: String = "", val error: String = "")
+    @Volatile
+    private var activeCall: Call? = null
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
@@ -43,7 +46,9 @@ class SiliconFlowAsrService {
             .build()
 
         return try {
-            client.newCall(request).execute().use { response ->
+            val call = client.newCall(request)
+            activeCall = call
+            call.execute().use { response ->
                 val responseBody = response.body?.string().orEmpty()
                 if (!response.isSuccessful) {
                     ApiResult(false, error = "SiliconFlow HTTP ${response.code}: ${responseBody.ifBlank { "empty" }}")
@@ -56,7 +61,12 @@ class SiliconFlowAsrService {
         } catch (e: Exception) {
             ApiResult(false, error = "SiliconFlow request failed")
         } finally {
+            activeCall = null
             runCatching { file.delete() }
         }
+    }
+
+    fun cancelCurrentRequest() {
+        runCatching { activeCall?.cancel() }
     }
 }

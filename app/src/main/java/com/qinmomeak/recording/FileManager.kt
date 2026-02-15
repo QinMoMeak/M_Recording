@@ -16,11 +16,17 @@ import java.util.Locale
 class FileManager(private val context: Context) {
     private val dao = AppDatabase.get(context).fileRecordDao()
     private val folderStore = FolderFilterStore(context)
+    data class CsvImportResult(val total: Int, val imported: Int, val failed: Int)
 
     suspend fun syncMediaStore() = withContext(Dispatchers.IO) {
         val selectedPrefixes = folderStore.getPrefixes().toList()
+        val existingAll = dao.getAllRecords()
+        val existingByPath = existingAll.associateBy { it.filePath }
+
         if (selectedPrefixes.isEmpty()) {
+            val keep = existingAll.filter { hasResult(it) }
             dao.clearAll()
+            if (keep.isNotEmpty()) dao.upsertAll(keep)
             return@withContext
         }
 
@@ -37,13 +43,14 @@ class FileManager(private val context: Context) {
         )
 
         if (records.isEmpty()) {
+            val keep = existingAll.filter { hasResult(it) }
             dao.clearAll()
+            if (keep.isNotEmpty()) dao.upsertAll(keep)
             return@withContext
         }
 
-        val existing = dao.findByPaths(records.map { it.filePath }).associateBy { it.filePath }
         val merged = records.map { fresh ->
-            val old = existing[fresh.filePath]
+            val old = existingByPath[fresh.filePath]
             if (old == null) fresh else {
                 fresh.copy(
                     isProcessed = old.isProcessed,
@@ -53,8 +60,13 @@ class FileManager(private val context: Context) {
                 )
             }
         }
+
+        val scannedPathSet = merged.map { it.filePath }.toHashSet()
+        val keepHistoryOnly = existingAll.filter { old ->
+            old.filePath !in scannedPathSet && hasResult(old)
+        }
         dao.clearAll()
-        dao.upsertAll(merged)
+        dao.upsertAll(merged + keepHistoryOnly)
     }
 
     suspend fun getRecords(scope: MediaScope, sortBy: SortBy, ascending: Boolean): List<FileRecord> = withContext(Dispatchers.IO) {
@@ -122,6 +134,52 @@ class FileManager(private val context: Context) {
         }
         out.writeText(header + body, Charsets.UTF_8)
         out
+    }
+
+    suspend fun importRecordsCsv(csvUri: Uri): CsvImportResult = withContext(Dispatchers.IO) {
+        val lines = context.contentResolver.openInputStream(csvUri)?.bufferedReader(Charsets.UTF_8)?.use { reader ->
+            reader.readLines()
+        } ?: return@withContext CsvImportResult(0, 0, 0)
+
+        var total = 0
+        var failed = 0
+        val records = mutableListOf<FileRecord>()
+        lines.forEachIndexed { idx, raw ->
+            val line = raw.trim()
+            if (line.isBlank()) return@forEachIndexed
+            if (idx == 0 && line.lowercase().contains("filepath")) return@forEachIndexed
+            total++
+            val cols = parseCsvLine(line)
+            if (cols.size < 10) {
+                failed++
+                return@forEachIndexed
+            }
+            val record = runCatching {
+                FileRecord(
+                    filePath = uncsv(cols[0]),
+                    fileName = uncsv(cols[1]),
+                    mediaType = uncsv(cols[2]).ifBlank { "audio" },
+                    durationMs = cols[3].toLongOrNull() ?: 0L,
+                    sizeBytes = cols[4].toLongOrNull() ?: 0L,
+                    addedTimeSec = cols[5].toLongOrNull() ?: (System.currentTimeMillis() / 1000),
+                    isProcessed = cols[6].equals("true", ignoreCase = true),
+                    isHidden = cols[7].equals("true", ignoreCase = true),
+                    transcriptText = uncsv(cols[8]),
+                    summaryText = uncsv(cols[9])
+                )
+            }.getOrNull()
+
+            if (record == null || record.filePath.isBlank()) {
+                failed++
+                return@forEachIndexed
+            }
+            records += record
+        }
+
+        if (records.isNotEmpty()) {
+            records.chunked(200).forEach { dao.upsertAll(it) }
+        }
+        CsvImportResult(total = total, imported = records.size, failed = failed)
     }
 
     private fun sortRecords(records: List<FileRecord>, sortBy: SortBy, ascending: Boolean): List<FileRecord> {
@@ -254,6 +312,48 @@ class FileManager(private val context: Context) {
 
     private fun csv(v: String): String {
         return "\"" + v.replace("\"", "\"\"").replace("\n", "\\n").replace("\r", "\\r") + "\""
+    }
+
+    private fun uncsv(v: String): String {
+        var s = v
+        if (s.length >= 2 && s.first() == '"' && s.last() == '"') {
+            s = s.substring(1, s.length - 1)
+        }
+        return s.replace("\"\"", "\"").replace("\\n", "\n").replace("\\r", "\r")
+    }
+
+    private fun parseCsvLine(line: String): List<String> {
+        val out = mutableListOf<String>()
+        val sb = StringBuilder()
+        var inQuotes = false
+        var i = 0
+        while (i < line.length) {
+            val ch = line[i]
+            if (ch == '"') {
+                if (inQuotes && i + 1 < line.length && line[i + 1] == '"') {
+                    sb.append('"')
+                    i += 2
+                    continue
+                }
+                inQuotes = !inQuotes
+                i++
+                continue
+            }
+            if (ch == ',' && !inQuotes) {
+                out += sb.toString()
+                sb.setLength(0)
+                i++
+                continue
+            }
+            sb.append(ch)
+            i++
+        }
+        out += sb.toString()
+        return out
+    }
+
+    private fun hasResult(record: FileRecord): Boolean {
+        return record.isProcessed || record.transcriptText.isNotBlank() || record.summaryText.isNotBlank()
     }
 }
 

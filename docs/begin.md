@@ -292,3 +292,79 @@ amespace 与 pplicationId 均为 com.qinmomeak.recording。
 - `onAsrCompleted` 改为 `launchTask` 包裹，确保识别回调场景下也会稳定落库。
 - 执行 `./gradlew :app:assembleDebug` 成功，APK：`app/build/outputs/apk/debug/app-debug.apk`。
 - 自动版本递增生效：下次构建版本为 `1.0.11`（`versionCode=11`）。
+
+### 2026-02-15
+- 新增 `NativeAudioProcessor`（仅原生 API）：
+  - `splitAudio(sourcePath, segmentDurationMs)`：使用 `MediaExtractor + MediaMuxer` 进行音频分片；
+  - 超过 50 分钟自动切段（默认 50min/段，预留安全余量）；
+  - 分片时使用 `seekTo(..., SEEK_TO_PREVIOUS_SYNC)` 保证切点稳定；
+  - 分片后若单段仍 >50MB，触发 `MediaCodec` 解码/重采样/单声道/低码率 AAC（16k + mono + 32kbps）压缩，再由 `MediaMuxer` 封装。
+- SiliconFlow 流程升级为“分片串行识别”：
+  - 在 `MainActivity.processAudioBySiliconFlow` 中接入分片；
+  - 按分片顺序逐段调用 ASR，上一段成功后才处理下一段；
+  - 各段文本通过 `StringBuilder` 拼接为完整转录，再交给总结流程。
+- 增加分片与识别进度回调映射到主进度条（分片阶段/逐段识别阶段可见）。
+- 执行 `./gradlew :app:assembleDebug` 成功，APK：`app/build/outputs/apk/debug/app-debug.apk`。
+- 自动版本递增生效：下次构建版本为 `1.0.12`（`versionCode=12`）。
+
+### 2026-02-15
+- 修复 SiliconFlow 两类失败场景：
+  1) `<1小时但>50MB` 的 MP3：不再走单段直拷贝分片，改为直接低码率重编码压缩（16k/mono/32kbps AAC）后再识别。
+  2) `>1小时` 的 AAC：SiliconFlow 流程不再先走 `prepareAudioForUpload` 的 AAC->WAV 路径，改为原始音频进入 `NativeAudioProcessor` 分片/压缩，输出兼容的 `.m4a` 分片再识别。
+- `NativeAudioProcessor` 增强：当无法读取元信息时不再回退原文件直传，先尝试压缩为兼容格式，失败才返回空并报分片失败。
+- 执行 `./gradlew :app:assembleDebug` 成功，APK：`app/build/outputs/apk/debug/app-debug.apk`。
+- 自动版本递增生效：下次构建版本为 `1.0.13`（`versionCode=13`）。
+
+### 2026-02-15
+- 按需求切换为“快速切片模式”：`NativeAudioProcessor` 不再进行本地重编码压缩（移除 MediaCodec 解码/重采样/编码路径）。
+- 新策略改为仅使用 `MediaExtractor + MediaMuxer`：
+  - 同时按时长与体积约束计算分片数（目标 `<1h` 且尽量 `<50MB`）；
+  - 默认分片阈值 50 分钟，硬约束不超过 59 分钟；
+  - 使用 `seekTo(..., SEEK_TO_PREVIOUS_SYNC)` 切点对齐；
+  - 增加二次校正分片（若仍超限继续拆分该片段）。
+- SiliconFlow 串行识别流程保持不变：逐片识别并拼接文本后再总结。
+- 执行 `./gradlew :app:assembleDebug` 成功，APK：`app/build/outputs/apk/debug/app-debug.apk`。
+- 自动版本递增生效：下次构建版本为 `1.0.14`（`versionCode=14`）。
+
+### 2026-02-15
+- 更新帮助弹窗文案为新版《M Recording 使用指南》：
+  - 强化 ASR 选择说明（阿里云大文件优先、SiliconFlow 超限自动切片且速度较慢）；
+  - 补充音频转码说明、四种场景模式、历史存档与前台运行建议；
+  - 文案已替换到 `strings.xml` 的 `help_body`。
+- 执行 `./gradlew :app:assembleDebug` 成功，APK：`app/build/outputs/apk/debug/app-debug.apk`。
+- 自动版本递增生效：下次构建版本为 `1.0.15`（`versionCode=15`）。
+
+### 2026-02-15
+- 按“高可靠性流式切片方案”改造 `NativeAudioProcessor`：
+  - 引入双重约束切片计算：`MaxDurationBySize = (45MB / totalBytes) * totalDuration`，最终分片时长 `SegmentTime = min(50min, MaxDurationBySize, 59min)`；
+  - 目标确保每段满足 `<1h` 且尽量 `<50MB`（含 45MB 安全缓冲）。
+- 新增 MP3 专用切片路径（不走 MediaMuxer）：
+  - 检测到 `audio/mpeg` 或 `.mp3` 时，改用 `RandomAccessFile` 字节流切片；
+  - 在目标字节位置附近查找 MP3 帧同步头（0xFFEx）后切分，提升 MP3 切片成功率与稳定性。
+- AAC/M4A 路径继续使用 `MediaExtractor + MediaMuxer`，并加固封装格式字段：`sampleRate/channel/bitRate/csd-0/csd-1`。
+- 新增超限二次拆分兜底：若某段仍超时长/体积约束，会继续拆分该段。
+- 执行 `./gradlew :app:assembleDebug` 成功，APK：`app/build/outputs/apk/debug/app-debug.apk`。
+- 自动版本递增生效：下次构建版本为 `1.0.16`（`versionCode=16`）。
+
+### 2026-02-15
+- 修复“停止任务只停主流程、不停分片/上传”问题：
+  - `MainActivity` 新增 `stopRequested` 全局停止标记；
+  - 停止按钮触发时同时执行：`stopRequested=true`、取消当前协程、取消 SiliconFlow 正在进行的 HTTP 请求；
+  - 在分片、识别循环、总结等关键路径增加 `ensureNotStopped()` 检查，及时中断后续流程。
+- `NativeAudioProcessor.splitAudio` 新增 `shouldStop` 回调，分片主循环/MP3字节切片/超限二次切分均可响应停止。
+- `SiliconFlowAsrService` 新增当前请求句柄与 `cancelCurrentRequest()`，支持在停止时立刻中断网络请求。
+- 执行 `./gradlew :app:assembleDebug` 成功，APK：`app/build/outputs/apk/debug/app-debug.apk`。
+- 自动版本递增生效：下次构建版本为 `1.0.17`（`versionCode=17`）。
+
+### 2026-02-15
+- 新增“识别历史 CSV 备份导入/导出”完整能力：
+  - 媒体库新增 `导入CSV` 按钮（配合已有 `导出CSV`）；
+  - 支持从本地选择 CSV 并导入 Room 数据表 `file_records`；
+  - 导入结果会提示：总计/成功/失败条数。
+- `FileManager` 新增 `importRecordsCsv(uri)`：
+  - 解析带引号/逗号/双引号转义的 CSV；
+  - 恢复 `\n`、`\r` 到真实换行；
+  - 批量 `upsertAll` 写入，避免覆盖失败。
+- 同步逻辑调整：`syncMediaStore()` 不再无条件清空历史，保留“已识别记录”（`isProcessed` 或转录/总结非空），避免导入的历史在同步时被清空。
+- 执行 `./gradlew :app:assembleDebug` 成功，APK：`app/build/outputs/apk/debug/app-debug.apk`。
+- 自动版本递增生效：下次构建版本为 `1.0.18`（`versionCode=18`）。

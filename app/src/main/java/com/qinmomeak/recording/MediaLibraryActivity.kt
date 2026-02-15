@@ -44,6 +44,19 @@ class MediaLibraryActivity : AppCompatActivity() {
         viewModel.syncAndLoad()
     }
 
+    private val pickCsv = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        lifecycleScope.launch {
+            val result = FileManager(this@MediaLibraryActivity).importRecordsCsv(uri)
+            Toast.makeText(
+                this@MediaLibraryActivity,
+                "CSV导入完成: 总计${result.total}，成功${result.imported}，失败${result.failed}",
+                Toast.LENGTH_LONG
+            ).show()
+            viewModel.load()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMediaLibraryBinding.inflate(layoutInflater)
@@ -142,6 +155,9 @@ class MediaLibraryActivity : AppCompatActivity() {
                     Toast.LENGTH_LONG
                 ).show()
             }
+        }
+        binding.actionImportCsv.setOnClickListener {
+            pickCsv.launch("*/*")
         }
     }
 
