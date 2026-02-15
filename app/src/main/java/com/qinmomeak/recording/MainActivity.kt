@@ -50,7 +50,6 @@ class MainActivity : AppCompatActivity(), AliyunAsrManager.Listener {
     private val audioExtractor by lazy { AudioExtractor(this) }
     private val ossUploader by lazy { OssUploaderService(this) }
     private val asrManager by lazy { AliyunAsrManager(this, listener = this) }
-    private val tokenService by lazy { AliyunTokenService() }
     private val fileTransApi by lazy { AliyunFileTransApiService() }
     private val siliconFlowAsr by lazy { SiliconFlowAsrService() }
     private val summarizerService by lazy { SummarizerService() }

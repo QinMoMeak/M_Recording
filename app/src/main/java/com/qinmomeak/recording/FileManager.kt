@@ -114,7 +114,7 @@ class FileManager(private val context: Context) {
 
     suspend fun exportAllRecordsCsv(): File = withContext(Dispatchers.IO) {
         val all = dao.getAllRecords()
-        val dir = context.getExternalFilesDir(null) ?: context.filesDir
+        val dir = getCsvBackupDir()
         val time = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val out = File(dir, "file_records_$time.csv")
         val header = "filePath,fileName,mediaType,durationMs,sizeBytes,addedTimeSec,isProcessed,isHidden,transcriptText,summaryText\n"
@@ -136,50 +136,25 @@ class FileManager(private val context: Context) {
         out
     }
 
-    suspend fun importRecordsCsv(csvUri: Uri): CsvImportResult = withContext(Dispatchers.IO) {
-        val lines = context.contentResolver.openInputStream(csvUri)?.bufferedReader(Charsets.UTF_8)?.use { reader ->
-            reader.readLines()
-        } ?: return@withContext CsvImportResult(0, 0, 0)
+    suspend fun importRecordsCsv(csvFile: File): CsvImportResult = withContext(Dispatchers.IO) {
+        if (!csvFile.exists() || !csvFile.isFile) return@withContext CsvImportResult(0, 0, 0)
+        val lines = runCatching { csvFile.readLines(Charsets.UTF_8) }.getOrNull()
+            ?: return@withContext CsvImportResult(0, 0, 0)
+        importCsvLines(lines)
+    }
 
-        var total = 0
-        var failed = 0
-        val records = mutableListOf<FileRecord>()
-        lines.forEachIndexed { idx, raw ->
-            val line = raw.trim()
-            if (line.isBlank()) return@forEachIndexed
-            if (idx == 0 && line.lowercase().contains("filepath")) return@forEachIndexed
-            total++
-            val cols = parseCsvLine(line)
-            if (cols.size < 10) {
-                failed++
-                return@forEachIndexed
-            }
-            val record = runCatching {
-                FileRecord(
-                    filePath = uncsv(cols[0]),
-                    fileName = uncsv(cols[1]),
-                    mediaType = uncsv(cols[2]).ifBlank { "audio" },
-                    durationMs = cols[3].toLongOrNull() ?: 0L,
-                    sizeBytes = cols[4].toLongOrNull() ?: 0L,
-                    addedTimeSec = cols[5].toLongOrNull() ?: (System.currentTimeMillis() / 1000),
-                    isProcessed = cols[6].equals("true", ignoreCase = true),
-                    isHidden = cols[7].equals("true", ignoreCase = true),
-                    transcriptText = uncsv(cols[8]),
-                    summaryText = uncsv(cols[9])
-                )
-            }.getOrNull()
+    fun listBackupCsvFiles(): List<File> {
+        val dir = getCsvBackupDir()
+        return dir.listFiles()
+            ?.filter { it.isFile && it.extension.equals("csv", ignoreCase = true) }
+            ?.sortedByDescending { it.lastModified() }
+            .orEmpty()
+    }
 
-            if (record == null || record.filePath.isBlank()) {
-                failed++
-                return@forEachIndexed
-            }
-            records += record
-        }
-
-        if (records.isNotEmpty()) {
-            records.chunked(200).forEach { dao.upsertAll(it) }
-        }
-        CsvImportResult(total = total, imported = records.size, failed = failed)
+    fun getCsvBackupDir(): File {
+        val dir = File(context.getExternalFilesDir(null) ?: context.filesDir, "history_csv")
+        if (!dir.exists()) dir.mkdirs()
+        return dir
     }
 
     private fun sortRecords(records: List<FileRecord>, sortBy: SortBy, ascending: Boolean): List<FileRecord> {
@@ -354,6 +329,48 @@ class FileManager(private val context: Context) {
 
     private fun hasResult(record: FileRecord): Boolean {
         return record.isProcessed || record.transcriptText.isNotBlank() || record.summaryText.isNotBlank()
+    }
+
+    private suspend fun importCsvLines(lines: List<String>): CsvImportResult {
+        var total = 0
+        var failed = 0
+        val records = mutableListOf<FileRecord>()
+        lines.forEachIndexed { idx, raw ->
+            val line = raw.trim()
+            if (line.isBlank()) return@forEachIndexed
+            if (idx == 0 && line.lowercase().contains("filepath")) return@forEachIndexed
+            total++
+            val cols = parseCsvLine(line)
+            if (cols.size < 10) {
+                failed++
+                return@forEachIndexed
+            }
+            val record = runCatching {
+                FileRecord(
+                    filePath = uncsv(cols[0]),
+                    fileName = uncsv(cols[1]),
+                    mediaType = uncsv(cols[2]).ifBlank { "audio" },
+                    durationMs = cols[3].toLongOrNull() ?: 0L,
+                    sizeBytes = cols[4].toLongOrNull() ?: 0L,
+                    addedTimeSec = cols[5].toLongOrNull() ?: (System.currentTimeMillis() / 1000),
+                    isProcessed = cols[6].equals("true", ignoreCase = true),
+                    isHidden = cols[7].equals("true", ignoreCase = true),
+                    transcriptText = uncsv(cols[8]),
+                    summaryText = uncsv(cols[9])
+                )
+            }.getOrNull()
+
+            if (record == null || record.filePath.isBlank()) {
+                failed++
+                return@forEachIndexed
+            }
+            records += record
+        }
+
+        if (records.isNotEmpty()) {
+            records.chunked(200).forEach { dao.upsertAll(it) }
+        }
+        return CsvImportResult(total = total, imported = records.size, failed = failed)
     }
 }
 

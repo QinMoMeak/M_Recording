@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -19,14 +18,16 @@ class MediaLibraryActivity : AppCompatActivity() {
     private lateinit var viewModel: MediaLibraryViewModel
     private lateinit var adapter: MediaLibraryAdapter
     private lateinit var folderStore: FolderFilterStore
+    private val prefs by lazy { getSharedPreferences("media_library_prefs", Context.MODE_PRIVATE) }
+    private val fileManager by lazy { FileManager(this) }
 
     private val requestPermissions = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
     ) {
         viewModel.syncAndLoad()
     }
 
-    private val pickFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+    private val pickFolder = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri == null) return@registerForActivityResult
         runCatching {
             contentResolver.takePersistableUriPermission(
@@ -44,19 +45,6 @@ class MediaLibraryActivity : AppCompatActivity() {
         viewModel.syncAndLoad()
     }
 
-    private val pickCsv = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri == null) return@registerForActivityResult
-        lifecycleScope.launch {
-            val result = FileManager(this@MediaLibraryActivity).importRecordsCsv(uri)
-            Toast.makeText(
-                this@MediaLibraryActivity,
-                "CSV导入完成: 总计${result.total}，成功${result.imported}，失败${result.failed}",
-                Toast.LENGTH_LONG
-            ).show()
-            viewModel.load()
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMediaLibraryBinding.inflate(layoutInflater)
@@ -67,6 +55,7 @@ class MediaLibraryActivity : AppCompatActivity() {
             this,
             MediaLibraryViewModelFactory(FileManager(this))
         )[MediaLibraryViewModel::class.java]
+        restoreSortPrefs()
 
         setupRecycler()
         setupSortActions()
@@ -98,14 +87,17 @@ class MediaLibraryActivity : AppCompatActivity() {
     private fun setupSortActions() {
         binding.sortTime.setOnClickListener {
             viewModel.toggleSort(SortBy.TIME)
+            persistSortPrefs()
             updateSortHighlight()
         }
         binding.sortName.setOnClickListener {
             viewModel.toggleSort(SortBy.NAME)
+            persistSortPrefs()
             updateSortHighlight()
         }
         binding.sortSize.setOnClickListener {
             viewModel.toggleSort(SortBy.SIZE)
+            persistSortPrefs()
             updateSortHighlight()
         }
         updateSortHighlight()
@@ -148,7 +140,7 @@ class MediaLibraryActivity : AppCompatActivity() {
         }
         binding.actionExportCsv.setOnClickListener {
             lifecycleScope.launch {
-                val csv = FileManager(this@MediaLibraryActivity).exportAllRecordsCsv()
+                val csv = fileManager.exportAllRecordsCsv()
                 Toast.makeText(
                     this@MediaLibraryActivity,
                     "CSV已导出: ${csv.absolutePath}",
@@ -157,7 +149,7 @@ class MediaLibraryActivity : AppCompatActivity() {
             }
         }
         binding.actionImportCsv.setOnClickListener {
-            pickCsv.launch("*/*")
+            showImportCsvDialog()
         }
     }
 
@@ -227,13 +219,57 @@ class MediaLibraryActivity : AppCompatActivity() {
         requestPermissions.launch(PermissionUtils.mediaPermissions())
     }
 
+    private fun showImportCsvDialog() {
+        val files = fileManager.listBackupCsvFiles()
+        if (files.isEmpty()) {
+            Toast.makeText(this, "未找到可导入CSV，请先导出备份", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val labels = files.map { "${it.name} (${formatFileSize(it.length())})" }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("选择要导入的CSV")
+            .setItems(labels) { _, which ->
+                lifecycleScope.launch {
+                    val result = fileManager.importRecordsCsv(files[which])
+                    Toast.makeText(
+                        this@MediaLibraryActivity,
+                        "CSV导入完成: 总计${result.total}，成功${result.imported}，失败${result.failed}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    viewModel.load()
+                }
+            }
+            .show()
+    }
+
     private fun updateFolderHint() {
         val count = folderStore.treeCount()
         binding.folderHint.text = if (count <= 0) {
             getString(R.string.folder_not_selected)
         } else {
-            getString(R.string.folder_selected_count, count)
+            val dir = fileManager.getCsvBackupDir().absolutePath
+            getString(R.string.folder_selected_count, count) + " | CSV: $dir"
         }
+    }
+
+    private fun persistSortPrefs() {
+        prefs.edit()
+            .putString(KEY_SORT_BY, viewModel.sortBy.name)
+            .putBoolean(KEY_SORT_ASC, viewModel.ascending)
+            .apply()
+    }
+
+    private fun restoreSortPrefs() {
+        val savedSort = prefs.getString(KEY_SORT_BY, SortBy.TIME.name).orEmpty()
+        val sort = runCatching { SortBy.valueOf(savedSort) }.getOrDefault(SortBy.TIME)
+        val asc = prefs.getBoolean(KEY_SORT_ASC, false)
+        viewModel.sortBy = sort
+        viewModel.ascending = asc
+    }
+
+    private fun formatFileSize(size: Long): String {
+        val mb = size / 1024.0 / 1024.0
+        return String.format("%.2fMB", mb)
     }
 
     private fun startSelection(record: FileRecord) {
@@ -317,6 +353,8 @@ class MediaLibraryActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_MEDIA_URI = "extra_media_uri"
         const val EXTRA_MEDIA_TYPE = "extra_media_type"
+        private const val KEY_SORT_BY = "key_sort_by"
+        private const val KEY_SORT_ASC = "key_sort_asc"
 
         fun open(context: Context) {
             context.startActivity(Intent(context, MediaLibraryActivity::class.java))

@@ -378,3 +378,26 @@ amespace 与 pplicationId 均为 com.qinmomeak.recording。
   - 用于提示任务仍在执行、未卡死。
 - 执行 `./gradlew :app:assembleDebug` 成功，APK：`app/build/outputs/apk/debug/app-debug.apk`。
 - 自动版本递增生效：下次构建版本为 `1.0.19`（`versionCode=19`）。
+
+### 2026-02-15
+- CSV 导入/导出目录统一：
+  - `FileManager` 固定使用同一目录 `externalFilesDir/history_csv` 作为备份目录；
+  - 导出写入该目录；导入默认从该目录读取。
+- 导入按钮位置调整：
+  - 将 `导入CSV`、`导出CSV` 移到“已识别”同一行右侧（`filterBar`），修复原位置被遮挡问题。
+- 排序记忆：
+  - 媒体库的“按时间/按名称/按大小 + 升降序”保存到本地偏好；
+  - 下次进入媒体库自动恢复上次排序状态，不再重置。
+- 下拉框对齐修复：
+  - 主界面 `场景模式 / ASR引擎 / 输出格式` 三个下拉输入改为固定高度 56dp，`gravity=start|center_vertical`，文本左对齐且垂直居中。
+- 导入方式优化：
+  - `导入CSV` 按钮改为直接列出备份目录中的 CSV 文件选择导入，并提示总计/成功/失败；
+  - `syncMediaStore` 调整为保留已识别历史（含导入记录），避免同步时被清空。
+- 执行 `./gradlew :app:assembleDebug` 成功，APK：`app/build/outputs/apk/debug/app-debug.apk`。
+- 自动版本递增生效：下次构建版本为 `1.0.20`（`versionCode=20`）。
+
+## 2026-02-15 更新（帮助文档与代码精简）
+- 帮助弹窗文案末尾已新增更新地址：`https://github.com/QinMoMeak/M_Recording/releases`
+- 保持既有功能不变的前提下完成安全精简：移除未使用的 TokenService 引用与未使用的 CSV 导入重载方法。
+- 已执行构建校验：`./gradlew :app:assembleDebug` 构建成功。
+- 本次构建后自动版本推进：`versionName=1.0.21`、`versionCode=21`（当前可安装包来自本次成功构建）。
