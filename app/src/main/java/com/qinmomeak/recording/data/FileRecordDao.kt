@@ -26,6 +26,9 @@ interface FileRecordDao {
     @Query("SELECT * FROM file_records WHERE filePath = :filePath LIMIT 1")
     suspend fun findByPath(filePath: String): FileRecord?
 
+    @Query("SELECT * FROM file_records")
+    suspend fun getAllRecords(): List<FileRecord>
+
     @Query("SELECT * FROM file_records WHERE filePath IN (:paths)")
     suspend fun findByPaths(paths: List<String>): List<FileRecord>
 
@@ -37,5 +40,11 @@ interface FileRecordDao {
 
     @Query("UPDATE file_records SET isProcessed = :processed, transcriptText = :transcript, summaryText = :summary WHERE filePath = :filePath")
     suspend fun updateProcessResult(filePath: String, processed: Boolean, transcript: String, summary: String)
+
+    @Query("UPDATE file_records SET transcriptText = :transcript, summaryText = :summary WHERE filePath = :filePath")
+    suspend fun updateContent(filePath: String, transcript: String, summary: String)
+
+    @Query("DELETE FROM file_records")
+    suspend fun clearAll()
 }
 

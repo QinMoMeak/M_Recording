@@ -17,6 +17,7 @@ class MediaLibraryViewModel(private val fileManager: FileManager) : ViewModel() 
     var sortBy: SortBy = SortBy.TIME
     var ascending: Boolean = false
     var currentScope: MediaScope = MediaScope.VISIBLE
+    var processedOnly: Boolean = false
 
     fun syncAndLoad() {
         viewModelScope.launch {
@@ -29,7 +30,12 @@ class MediaLibraryViewModel(private val fileManager: FileManager) : ViewModel() 
 
     fun load() {
         viewModelScope.launch {
-            _records.value = fileManager.getRecords(currentScope, sortBy, ascending)
+            val base = fileManager.getRecords(currentScope, sortBy, ascending)
+            _records.value = if (processedOnly) {
+                base.filter { it.isProcessed || it.transcriptText.isNotBlank() || it.summaryText.isNotBlank() }
+            } else {
+                base
+            }
         }
     }
 
@@ -45,6 +51,11 @@ class MediaLibraryViewModel(private val fileManager: FileManager) : ViewModel() 
 
     fun changeScope(newScope: MediaScope) {
         currentScope = newScope
+        load()
+    }
+
+    fun toggleProcessedOnly() {
+        processedOnly = !processedOnly
         load()
     }
 

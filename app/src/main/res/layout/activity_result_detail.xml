@@ -24,75 +24,84 @@
         android:id="@+id/titleText"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="8dp"
         android:text="@string/result_detail"
         android:textColor="@color/ios_text_primary"
         android:textSize="20sp"
         android:textStyle="bold"
+        app:layout_constraintBottom_toBottomOf="@id/actionBack"
+        app:layout_constraintEnd_toStartOf="@id/actionCopy"
         app:layout_constraintStart_toEndOf="@id/actionBack"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        android:layout_marginStart="8dp" />
+        app:layout_constraintTop_toTopOf="@id/actionBack" />
+
+    <ImageButton
+        android:id="@+id/actionCopy"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="@string/btn_copy"
+        android:src="@drawable/ic_copy_24"
+        android:tint="@color/ios_text_primary"
+        app:layout_constraintEnd_toStartOf="@id/actionSave"
+        app:layout_constraintTop_toTopOf="parent" />
 
     <TextView
-        android:id="@+id/transcriptLabel"
+        android:id="@+id/actionSave"
+        android:layout_width="wrap_content"
+        android:layout_height="36dp"
+        android:gravity="center"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp"
+        android:text="@string/save"
+        android:textColor="@color/ios_accent"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <TextView
+        android:id="@+id/fileNameText"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:text="@string/dialog_transcript_title"
-        android:textColor="@color/ios_text_primary"
-        android:textStyle="bold"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/titleText" />
-
-    <ScrollView
-        android:id="@+id/transcriptScroll"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        android:layout_marginTop="8dp"
-        app:layout_constraintStart_toStartOf="parent"
+        android:layout_marginTop="10dp"
+        android:ellipsize="middle"
+        android:maxLines="1"
+        android:textColor="@color/ios_text_secondary"
+        android:textSize="12sp"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/transcriptLabel"
-        app:layout_constraintBottom_toTopOf="@id/summaryLabel">
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/actionBack" />
 
-        <TextView
-            android:id="@+id/transcriptText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="@drawable/bg_ios_card"
-            android:padding="16dp"
-            android:textColor="@color/ios_text_primary"
-            android:textSize="14sp" />
-    </ScrollView>
-
-    <TextView
-        android:id="@+id/summaryLabel"
+    <com.google.android.material.tabs.TabLayout
+        android:id="@+id/tabLayout"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginTop="12dp"
-        android:text="@string/dialog_summary_title"
-        android:textColor="@color/ios_text_primary"
-        android:textStyle="bold"
+        app:tabIndicatorColor="@color/ios_accent"
+        app:tabMode="fixed"
+        app:tabTextColor="@color/ios_text_secondary"
+        app:tabSelectedTextColor="@color/ios_text_primary"
+        app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/transcriptScroll" />
+        app:layout_constraintTop_toBottomOf="@id/fileNameText" />
 
-    <ScrollView
-        android:id="@+id/summaryScroll"
+    <EditText
+        android:id="@+id/contentEditText"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:layout_marginTop="8dp"
-        app:layout_constraintStart_toStartOf="parent"
+        android:layout_marginTop="10dp"
+        android:background="@drawable/bg_ios_card"
+        android:gravity="top|start"
+        android:inputType="textMultiLine|textCapSentences"
+        android:minLines="16"
+        android:padding="14dp"
+        android:textColor="@color/ios_text_primary"
+        android:textSize="14sp"
+        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/summaryLabel"
-        app:layout_constraintBottom_toBottomOf="parent">
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/tabLayout" />
 
-        <TextView
-            android:id="@+id/summaryText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="@drawable/bg_ios_card"
-            android:padding="16dp"
-            android:textColor="@color/ios_text_primary"
-            android:textSize="14sp" />
-    </ScrollView>
 </androidx.constraintlayout.widget.ConstraintLayout>
 

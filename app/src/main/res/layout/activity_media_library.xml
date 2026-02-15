@@ -114,6 +114,74 @@
             app:cornerRadius="14dp" />
     </LinearLayout>
 
+    <LinearLayout
+        android:id="@+id/filterBar"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="horizontal"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/scopeBar">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/filterProcessed"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:text="@string/filter_processed"
+            app:cornerRadius="14dp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/folderBar"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/filterBar">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/actionPickFolder"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:text="@string/pick_folder"
+            app:cornerRadius="14dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/actionClearFolder"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:layout_marginStart="8dp"
+            android:text="@string/clear_folder"
+            app:cornerRadius="14dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/actionExportCsv"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:layout_marginStart="8dp"
+            android:text="@string/export_csv"
+            app:cornerRadius="14dp" />
+
+        <TextView
+            android:id="@+id/folderHint"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/ios_text_secondary"
+            android:textSize="12sp" />
+    </LinearLayout>
+
     <TextView
         android:id="@+id/loadingText"
         android:layout_width="0dp"
@@ -124,7 +192,7 @@
         android:textSize="12sp"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/scopeBar" />
+        app:layout_constraintTop_toBottomOf="@id/folderBar" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recycler"

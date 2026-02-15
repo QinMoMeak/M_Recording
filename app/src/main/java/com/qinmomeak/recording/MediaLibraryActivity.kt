@@ -2,21 +2,23 @@
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.qinmomeak.recording.data.FileRecord
 import com.qinmomeak.recording.databinding.ActivityMediaLibraryBinding
+import kotlinx.coroutines.launch
 
 class MediaLibraryActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMediaLibraryBinding
     private lateinit var viewModel: MediaLibraryViewModel
     private lateinit var adapter: MediaLibraryAdapter
+    private lateinit var folderStore: FolderFilterStore
 
     private val requestPermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -24,10 +26,29 @@ class MediaLibraryActivity : AppCompatActivity() {
         viewModel.syncAndLoad()
     }
 
+    private val pickFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        runCatching {
+            contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+        }
+        val changed = folderStore.addTree(uri)
+        if (changed) {
+            Toast.makeText(this, "已添加文件夹", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, "该文件夹已存在或无效", Toast.LENGTH_SHORT).show()
+        }
+        updateFolderHint()
+        viewModel.syncAndLoad()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMediaLibraryBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        folderStore = FolderFilterStore(this)
 
         viewModel = ViewModelProvider(
             this,
@@ -38,9 +59,17 @@ class MediaLibraryActivity : AppCompatActivity() {
         setupSortActions()
         setupScopeActions()
         setupToolbarActions()
+        setupFolderActions()
         observeViewModel()
+        updateFolderHint()
 
         ensurePermissionsAndLoad()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Refresh when returning from processing/detail pages so isProcessed state is current.
+        viewModel.syncAndLoad()
     }
 
     private fun setupRecycler() {
@@ -78,7 +107,12 @@ class MediaLibraryActivity : AppCompatActivity() {
             viewModel.changeScope(MediaScope.HIDDEN)
             updateScopeHighlight()
         }
+        binding.filterProcessed.setOnClickListener {
+            viewModel.toggleProcessedOnly()
+            updateFilterHighlight()
+        }
         updateScopeHighlight()
+        updateFilterHighlight()
     }
 
     private fun setupToolbarActions() {
@@ -89,14 +123,43 @@ class MediaLibraryActivity : AppCompatActivity() {
         binding.actionUnhide.setOnClickListener { applyUnhide() }
     }
 
+    private fun setupFolderActions() {
+        binding.actionPickFolder.setOnClickListener {
+            pickFolder.launch(null)
+        }
+        binding.actionClearFolder.setOnClickListener {
+            folderStore.clearAll()
+            updateFolderHint()
+            viewModel.syncAndLoad()
+            Toast.makeText(this, "已清空已选文件夹", Toast.LENGTH_SHORT).show()
+        }
+        binding.actionExportCsv.setOnClickListener {
+            lifecycleScope.launch {
+                val csv = FileManager(this@MediaLibraryActivity).exportAllRecordsCsv()
+                Toast.makeText(
+                    this@MediaLibraryActivity,
+                    "CSV已导出: ${csv.absolutePath}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
     private fun observeViewModel() {
         viewModel.records.observe(this) { records ->
             adapter.submit(records)
             binding.emptyState.text = if (records.isEmpty()) {
-                if (viewModel.currentScope == MediaScope.HIDDEN) "暂无隐藏文件" else "暂无媒体文件"
+                when {
+                    folderStore.treeCount() == 0 -> "请先选择文件夹"
+                    viewModel.currentScope == MediaScope.HIDDEN && viewModel.processedOnly -> "暂无已识别隐藏文件"
+                    viewModel.currentScope == MediaScope.HIDDEN -> "暂无隐藏文件"
+                    viewModel.processedOnly -> "暂无已识别文件"
+                    else -> "暂无媒体文件"
+                }
             } else ""
             updateScopeHighlight()
             updateSortHighlight()
+            updateFilterHighlight()
         }
         viewModel.loading.observe(this) { loading ->
             binding.loadingText.text = if (loading) "扫描中..." else ""
@@ -134,8 +197,27 @@ class MediaLibraryActivity : AppCompatActivity() {
         binding.scopeHidden.setTextColor(getColor(if (hiddenActive) R.color.ios_accent else R.color.ios_text_secondary))
     }
 
+    private fun updateFilterHighlight() {
+        val active = viewModel.processedOnly
+        binding.filterProcessed.setBackgroundColor(
+            getColor(if (active) R.color.ios_toggle_on else R.color.ios_surface)
+        )
+        binding.filterProcessed.setTextColor(
+            getColor(if (active) R.color.ios_accent else R.color.ios_text_secondary)
+        )
+    }
+
     private fun ensurePermissionsAndLoad() {
         requestPermissions.launch(PermissionUtils.mediaPermissions())
+    }
+
+    private fun updateFolderHint() {
+        val count = folderStore.treeCount()
+        binding.folderHint.text = if (count <= 0) {
+            getString(R.string.folder_not_selected)
+        } else {
+            getString(R.string.folder_selected_count, count)
+        }
     }
 
     private fun startSelection(record: FileRecord) {
@@ -180,23 +262,27 @@ class MediaLibraryActivity : AppCompatActivity() {
     }
 
     private fun showRecordDialog(record: FileRecord) {
-        val items = mutableListOf<String>()
-        val actions = mutableListOf<() -> Unit>()
+        lifecycleScope.launch {
+            val latest = FileManager(this@MediaLibraryActivity).find(record.filePath) ?: record
+            val items = mutableListOf<String>()
+            val actions = mutableListOf<() -> Unit>()
+            val hasResult = latest.isProcessed || latest.transcriptText.isNotBlank() || latest.summaryText.isNotBlank()
 
-        if (!record.isProcessed) {
-            items += "开始处理"
-            actions += { startProcess(record) }
-        } else {
-            items += "鏌ョ湅缁撴灉"
-            actions += { openDetail(record) }
-            items += "重新识别"
-            actions += { startProcess(record) }
+            if (!hasResult) {
+                items += "开始处理"
+                actions += { startProcess(latest) }
+            } else {
+                items += "查看结果"
+                actions += { openDetail(latest) }
+                items += "重新识别"
+                actions += { startProcess(latest) }
+            }
+
+            AlertDialog.Builder(this@MediaLibraryActivity)
+                .setTitle(latest.fileName)
+                .setItems(items.toTypedArray()) { _, which -> actions[which].invoke() }
+                .show()
         }
-
-        AlertDialog.Builder(this)
-            .setTitle(record.fileName)
-            .setItems(items.toTypedArray()) { _, which -> actions[which].invoke() }
-            .show()
     }
 
     private fun startProcess(record: FileRecord) {

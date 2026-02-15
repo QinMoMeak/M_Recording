@@ -9,22 +9,37 @@ import com.qinmomeak.recording.data.FileRecord
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class FileManager(private val context: Context) {
     private val dao = AppDatabase.get(context).fileRecordDao()
+    private val folderStore = FolderFilterStore(context)
 
     suspend fun syncMediaStore() = withContext(Dispatchers.IO) {
+        val selectedPrefixes = folderStore.getPrefixes().toList()
+        if (selectedPrefixes.isEmpty()) {
+            dao.clearAll()
+            return@withContext
+        }
+
         val records = mutableListOf<FileRecord>()
         records += queryMedia(
             collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-            mediaType = "audio"
+            mediaType = "audio",
+            selectedPrefixes = selectedPrefixes
         )
         records += queryMedia(
             collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-            mediaType = "video"
+            mediaType = "video",
+            selectedPrefixes = selectedPrefixes
         )
 
-        if (records.isEmpty()) return@withContext
+        if (records.isEmpty()) {
+            dao.clearAll()
+            return@withContext
+        }
 
         val existing = dao.findByPaths(records.map { it.filePath }).associateBy { it.filePath }
         val merged = records.map { fresh ->
@@ -38,6 +53,7 @@ class FileManager(private val context: Context) {
                 )
             }
         }
+        dao.clearAll()
         dao.upsertAll(merged)
     }
 
@@ -59,7 +75,7 @@ class FileManager(private val context: Context) {
     }
 
     suspend fun saveResult(filePath: String, transcript: String, summary: String) = withContext(Dispatchers.IO) {
-        val processed = transcript.isNotBlank()
+        val processed = transcript.isNotBlank() || summary.isNotBlank()
         val exists = dao.findByPath(filePath)
         if (exists != null) {
             dao.updateProcessResult(
@@ -80,6 +96,34 @@ class FileManager(private val context: Context) {
         dao.upsert(finalRecord)
     }
 
+    suspend fun updateResultContent(filePath: String, transcript: String, summary: String) = withContext(Dispatchers.IO) {
+        dao.updateContent(filePath, transcript, summary)
+    }
+
+    suspend fun exportAllRecordsCsv(): File = withContext(Dispatchers.IO) {
+        val all = dao.getAllRecords()
+        val dir = context.getExternalFilesDir(null) ?: context.filesDir
+        val time = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        val out = File(dir, "file_records_$time.csv")
+        val header = "filePath,fileName,mediaType,durationMs,sizeBytes,addedTimeSec,isProcessed,isHidden,transcriptText,summaryText\n"
+        val body = buildString {
+            all.forEach { row ->
+                append(csv(row.filePath)).append(',')
+                append(csv(row.fileName)).append(',')
+                append(csv(row.mediaType)).append(',')
+                append(row.durationMs).append(',')
+                append(row.sizeBytes).append(',')
+                append(row.addedTimeSec).append(',')
+                append(row.isProcessed).append(',')
+                append(row.isHidden).append(',')
+                append(csv(row.transcriptText)).append(',')
+                append(csv(row.summaryText)).append('\n')
+            }
+        }
+        out.writeText(header + body, Charsets.UTF_8)
+        out
+    }
+
     private fun sortRecords(records: List<FileRecord>, sortBy: SortBy, ascending: Boolean): List<FileRecord> {
         val sorted = when (sortBy) {
             SortBy.TIME -> records.sortedBy { it.addedTimeSec }
@@ -89,14 +133,16 @@ class FileManager(private val context: Context) {
         return if (ascending) sorted else sorted.reversed()
     }
 
-    private fun queryMedia(collection: Uri, mediaType: String): List<FileRecord> {
+    private fun queryMedia(collection: Uri, mediaType: String, selectedPrefixes: List<String>): List<FileRecord> {
         val resolver = context.contentResolver
         val columns = arrayOf(
             MediaStore.MediaColumns._ID,
             MediaStore.MediaColumns.DISPLAY_NAME,
             MediaStore.MediaColumns.SIZE,
             MediaStore.MediaColumns.DATE_ADDED,
-            MediaStore.MediaColumns.DURATION
+            MediaStore.MediaColumns.DURATION,
+            MediaStore.MediaColumns.RELATIVE_PATH,
+            MediaStore.MediaColumns.DATA
         )
         val result = mutableListOf<FileRecord>()
         resolver.query(
@@ -111,8 +157,14 @@ class FileManager(private val context: Context) {
             val sizeIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
             val dateIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_ADDED)
             val durationIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DURATION)
+            val relativePathIndex = cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
+            val dataPathIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
 
             while (cursor.moveToNext()) {
+                val relativePath = if (relativePathIndex >= 0) cursor.getString(relativePathIndex).orEmpty() else ""
+                val dataPath = if (dataPathIndex >= 0) cursor.getString(dataPathIndex).orEmpty() else ""
+                if (!isInSelectedFolder(relativePath, dataPath, selectedPrefixes)) continue
+
                 val id = cursor.getLong(idIndex)
                 val uri = ContentUris.withAppendedId(collection, id)
                 val name = cursor.getString(nameIndex).orEmpty().ifBlank { "unknown" }
@@ -130,6 +182,24 @@ class FileManager(private val context: Context) {
             }
         }
         return result
+    }
+
+    private fun isInSelectedFolder(relativePath: String, dataPath: String, selectedPrefixes: List<String>): Boolean {
+        if (selectedPrefixes.isEmpty()) return false
+        val rel = normalizePath(relativePath)
+        if (rel.isNotBlank() && selectedPrefixes.any { rel.startsWith(it, ignoreCase = true) }) {
+            return true
+        }
+        val data = normalizePath(dataPath)
+        if (data.isBlank()) return false
+        return selectedPrefixes.any { prefix ->
+            data.contains("/$prefix", ignoreCase = true) || data.startsWith(prefix, ignoreCase = true)
+        }
+    }
+
+    private fun normalizePath(value: String): String {
+        return value.replace('\\', '/').trim().trim('/')
+            .let { if (it.isBlank()) "" else "$it/" }
     }
 
     private fun buildRecordFromUri(uri: Uri): FileRecord? {
@@ -180,6 +250,10 @@ class FileManager(private val context: Context) {
             sizeBytes = size,
             addedTimeSec = added
         )
+    }
+
+    private fun csv(v: String): String {
+        return "\"" + v.replace("\"", "\"\"").replace("\n", "\\n").replace("\r", "\\r") + "\""
     }
 }
 

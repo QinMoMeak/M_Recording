@@ -154,7 +154,7 @@ class MainActivity : AppCompatActivity(), AliyunAsrManager.Listener {
                     startNewTask(clearInputText = false)
                     transcriptText = inputText
                     publishTranscript()
-                    summarize(transcriptText)
+                    launchTask { summarize(transcriptText) }
                 }
 
                 selectedAudioUri != null -> {
@@ -245,7 +245,7 @@ class MainActivity : AppCompatActivity(), AliyunAsrManager.Listener {
         return exts.any { text.contains(it, ignoreCase = true) }
     }
 
-    private fun summarize(transcript: String) {
+    private suspend fun summarize(transcript: String) {
         val scenario = binding.scenarioInput.text?.toString().orEmpty()
         val systemPrompt = scenarioTemplates[scenario] ?: scenarioTemplates.getValue("通用模式")
         val format = binding.formatInput.text?.toString().orEmpty().ifBlank { "md" }
@@ -266,25 +266,21 @@ content:
 $transcript
 """.trimIndent()
 
-        activityScope.launch {
-            setProgress(80, "AI 总结中")
-            val result = withContext(Dispatchers.IO) {
-                summarizerService.summarize(
-                    endpoint = BuildConfig.AI_ENDPOINT,
-                    apiKey = BuildConfig.AI_API_KEY,
-                    model = BuildConfig.AI_MODEL,
-                    systemPrompt = systemPrompt,
-                    userPrompt = userPrompt,
-                    sourceText = transcript
-                )
-            }
-            summaryText = result
-            publishSummary()
-            persistResult()
-            setProgress(100, "处理完成")
-            finishTaskCleanup()
-            setTaskRunning(false)
+        setProgress(80, "AI 总结中")
+        val result = withContext(Dispatchers.IO) {
+            summarizerService.summarize(
+                endpoint = BuildConfig.AI_ENDPOINT,
+                apiKey = BuildConfig.AI_API_KEY,
+                model = BuildConfig.AI_MODEL,
+                systemPrompt = systemPrompt,
+                userPrompt = userPrompt,
+                sourceText = transcript
+            )
         }
+        summaryText = result
+        publishSummary()
+        persistResult()
+        setProgress(100, "处理完成")
     }
 
     private fun setupTabs() {
@@ -465,10 +461,10 @@ $transcript
         binding.debugText.text = "T=$tLen ${if (tLen > 0) "[$tPreview]" else ""} | S=$sLen ${if (sLen > 0) "[$sPreview]" else ""}"
     }
 
-    private fun persistResult() {
+    private suspend fun persistResult() {
         val path = selectedMediaPath ?: selectedAudioUri?.toString()
         if (path.isNullOrBlank()) return
-        activityScope.launch(Dispatchers.IO) {
+        withContext(Dispatchers.IO) {
             FileManager(this@MainActivity).saveResult(path, transcriptText, summaryText)
         }
     }
@@ -619,9 +615,11 @@ $transcript
     }
 
     override fun onAsrCompleted(text: String) {
-        transcriptText = text
-        publishTranscript()
-        summarize(text)
+        launchTask {
+            transcriptText = text
+            publishTranscript()
+            summarize(text)
+        }
     }
 
     override fun onAsrError(message: String) {

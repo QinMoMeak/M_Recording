@@ -82,7 +82,7 @@ class MediaLibraryAdapter(
                 "--"
             }
             sub.text = "$duration  |  $sizeMb  |  $date"
-            badge.isVisible = record.isProcessed
+            badge.isVisible = record.isProcessed || record.transcriptText.isNotBlank() || record.summaryText.isNotBlank()
             check.isVisible = selectionEnabled
             check.isSelected = selected
             itemView.isSelected = selected

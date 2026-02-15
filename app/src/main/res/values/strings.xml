@@ -28,6 +28,12 @@
     <string name="sort_size">按大小</string>
     <string name="visible_files">可见文件</string>
     <string name="hidden_files">隐藏文件</string>
+    <string name="filter_processed">已识别</string>
+    <string name="pick_folder">选择文件夹</string>
+    <string name="clear_folder">清空</string>
+    <string name="export_csv">导出CSV</string>
+    <string name="folder_not_selected">未选择文件夹，仅显示选中文件夹内容</string>
+    <string name="folder_selected_count">已选文件夹：%1$d</string>
     <string name="cancel_select">取消选择</string>
     <string name="hide_selected">隐藏</string>
     <string name="unhide_selected">取消隐藏</string>
@@ -35,4 +41,5 @@
     <string name="refresh">刷新</string>
     <string name="back">返回</string>
     <string name="result_detail">识别结果</string>
+    <string name="save">保存</string>
 </resources>

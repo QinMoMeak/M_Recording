@@ -237,3 +237,58 @@ amespace 与 pplicationId 均为 com.qinmomeak.recording。
 - `MainActivity` 按类型分流：`video` 强制走 `processVideo`（先提取再识别），`audio` 走 `processAudio`。
 - 修复提取音频后缀：`AudioExtractor` 对 MediaMuxer 输出统一使用 `.m4a`（避免 AAC 裸流/容器不匹配导致不可用）。
 - 构建验证通过：`./gradlew :app:assembleDebug` 成功，APK 输出 `app/build/outputs/apk/debug/app-debug.apk`。
+### 2026-02-15
+- 修复“识别后仍只显示开始处理”：在 `MediaLibraryActivity` 新增 `onResume()` 自动执行 `viewModel.syncAndLoad()`，确保从处理页返回后 `isProcessed` 状态立即刷新。
+- 构建验证通过：`./gradlew :app:assembleDebug` 成功，APK 输出 `app/build/outputs/apk/debug/app-debug.apk`。
+### 2026-02-15
+- 修复“已识别但媒体库没有查看结果”竞态：`MainActivity.persistResult()` 从异步 fire-and-forget 改为 `suspend + withContext(IO)` 同流程落库，确保任务完成前 `isProcessed` 已写入数据库。
+- 构建验证通过：`./gradlew :app:assembleDebug` 成功，APK 输出 `app/build/outputs/apk/debug/app-debug.apk`。
+
+### 2026-02-15
+- 完成“场景 B（已处理文件）”闭环：`MediaLibraryActivity` 点击文件时先读取数据库最新记录，再判断是否显示“查看结果/重新识别”。
+- 修复媒体库弹窗文案乱码：已处理项正确显示“查看结果”。
+- 新增结果内容更新接口：`FileRecordDao.updateContent(...)` 与 `FileManager.updateResultContent(...)`。
+- 重构 `ResultDetailActivity`：
+  - 使用 Tab 切换“转录原文 / AI总结”；
+  - 内容可编辑；
+  - 支持“保存”回写 Room；
+  - 支持“一键复制”当前页文本；
+  - 顶部显示文件名，便于确认当前记录。
+- 重做 `activity_result_detail.xml` 以匹配新交互（返回、复制、保存、Tab、编辑区）。
+- 执行 `./gradlew :app:assembleDebug` 成功，APK 输出：`app/build/outputs/apk/debug/app-debug.apk`。
+- 自动版本递增已生效：本次构建后下次版本为 `1.0.7`（`versionCode=7`）。
+
+### 2026-02-15
+- 修复“媒体库点击后无查看结果”体验：媒体库点击文件时改为先读取数据库最新记录再判断状态，且“已识别”判定统一为 `isProcessed || transcriptText非空 || summaryText非空`。
+- 新增媒体库筛选按钮“已识别”：可一键仅查看已完成识别的文件（支持与“可见/隐藏”范围叠加）。
+- 识别徽标显示逻辑同步：列表项“已完成”标签改为同一判定逻辑，避免状态不一致。
+- 优化空列表提示：在已识别筛选下显示“暂无已识别文件/暂无已识别隐藏文件”。
+- 调整保存结果状态：`saveResult` 的 processed 标记改为“转录或总结任一非空即为已处理”。
+- 执行 `./gradlew :app:assembleDebug` 成功，APK：`app/build/outputs/apk/debug/app-debug.apk`。
+- 自动版本递增生效：下次构建版本为 `1.0.8`（`versionCode=8`）。
+
+### 2026-02-15
+- 媒体库扫描改为“仅已选文件夹”：新增 `FolderFilterStore` 持久化已选择的目录（SAF Tree URI -> 相对路径前缀）。
+- `FileManager.syncMediaStore()` 增加目录白名单过滤：只加载选中文件夹下的音视频；未选择文件夹时清空媒体库记录并提示先选目录。
+- 同步策略调整：每次扫描后先 `clearAll()` 再写入过滤结果，移除此前全量扫描残留（例如歌曲库内容）。
+- 媒体库 UI 新增文件夹控制区：`选择文件夹`、`清空`、已选数量提示。
+- `MediaLibraryActivity` 新增 `OpenDocumentTree` 选择目录与持久授权逻辑，选择后自动刷新列表。
+- 执行 `./gradlew :app:assembleDebug` 成功，APK：`app/build/outputs/apk/debug/app-debug.apk`。
+- 自动版本递增生效：下次构建版本为 `1.0.9`（`versionCode=9`）。
+
+### 2026-02-15
+- 新增 Room 数据表 CSV 导出能力，用于排查“是否真正写入数据库”：
+  - `FileRecordDao` 新增 `getAllRecords()`；
+  - `FileManager` 新增 `exportAllRecordsCsv()`，导出 `file_records` 全表到应用文件目录，包含全部字段（含转录/总结文本）。
+- 媒体库新增“导出CSV”按钮（与文件夹操作同一行），点击后直接导出并 Toast 显示完整路径。
+- 执行 `./gradlew :app:assembleDebug` 成功，APK：`app/build/outputs/apk/debug/app-debug.apk`。
+- 自动版本递增生效：下次构建版本为 `1.0.10`（`versionCode=10`）。
+
+### 2026-02-15
+- 修复“CSV中 transcriptText/summaryText 为空”的核心问题：
+  - `MainActivity.summarize` 从异步 `launch` 改为 `suspend` 串行执行；
+  - 总结与 `persistResult()` 现在在同一任务协程内完成，避免 `launchTask.finally` 提前清理 `selectedMediaPath/selectedAudioUri` 导致写库丢失。
+- `btnStart` 的文本直总结路径改为走 `launchTask { summarize(...) }`，保持任务生命周期一致。
+- `onAsrCompleted` 改为 `launchTask` 包裹，确保识别回调场景下也会稳定落库。
+- 执行 `./gradlew :app:assembleDebug` 成功，APK：`app/build/outputs/apk/debug/app-debug.apk`。
+- 自动版本递增生效：下次构建版本为 `1.0.11`（`versionCode=11`）。
