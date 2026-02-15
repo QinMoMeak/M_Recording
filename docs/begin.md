@@ -401,3 +401,13 @@ amespace 与 pplicationId 均为 com.qinmomeak.recording。
 - 保持既有功能不变的前提下完成安全精简：移除未使用的 TokenService 引用与未使用的 CSV 导入重载方法。
 - 已执行构建校验：`./gradlew :app:assembleDebug` 构建成功。
 - 本次构建后自动版本推进：`versionName=1.0.21`、`versionCode=21`（当前可安装包来自本次成功构建）。
+
+### 2026-02-16
+- 根据 `docs/begin.md` 当前开发状态重写 `README.md`：
+  - 同步为双 ASR（阿里云 + SiliconFlow）、媒体库管理、分片识别、CSV 备份、结果查看/重识别等现状说明；
+  - 更新项目结构与 `docs/` 文档入口；
+  - 更新 `local.properties` 配置项列表；
+  - 更新构建与自动版本递增机制说明；
+  - 补充发布更新地址。
+- 执行 `./gradlew :app:assembleDebug` 构建成功，APK：`app/build/outputs/apk/debug/app-debug.apk`。
+- 版本自动递增生效：下次构建版本为 `1.0.22`（`versionCode=22`）。
