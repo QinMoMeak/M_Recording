@@ -21,6 +21,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -43,6 +44,8 @@ class MainActivity : AppCompatActivity(), AliyunAsrManager.Listener {
     private var currentTask: Job? = null
     private var transcodedFile: File? = null
     private val stopRequested = AtomicBoolean(false)
+    private var runtimeJob: Job? = null
+    private var runtimeSeconds: Int = 0
 
     private val audioExtractor by lazy { AudioExtractor(this) }
     private val ossUploader by lazy { OssUploaderService(this) }
@@ -100,6 +103,7 @@ class MainActivity : AppCompatActivity(), AliyunAsrManager.Listener {
         setupStopAction()
         setupLibraryAction()
         setTaskRunning(false)
+        updateRuntimeText(0)
         ensureBasePermissions()
 
         val mediaPath = intent.getStringExtra(MediaLibraryActivity.EXTRA_MEDIA_URI)
@@ -420,6 +424,8 @@ $transcript
         publishTranscript()
         publishSummary()
         setProgress(0, "等待处理")
+        runtimeSeconds = 0
+        updateRuntimeText(0)
         setTaskRunning(false)
         if (clearInputText) {
             binding.textInput.setText("")
@@ -610,6 +616,11 @@ $transcript
         binding.btnStop.setBackgroundColor(
             ContextCompat.getColor(this, if (running) R.color.ios_danger else R.color.ios_disabled)
         )
+        if (running) {
+            startRuntimeTicker()
+        } else {
+            stopRuntimeTicker(reset = true)
+        }
     }
 
     private data class PrepareResult(val success: Boolean, val uri: Uri? = null, val error: String = "")
@@ -667,6 +678,7 @@ $transcript
     override fun onDestroy() {
         stopRequested.set(true)
         siliconFlowAsr.cancelCurrentRequest()
+        stopRuntimeTicker(reset = false)
         asrManager.release()
         super.onDestroy()
     }
@@ -675,6 +687,32 @@ $transcript
         if (stopRequested.get()) {
             throw CancellationException("stopped by user")
         }
+    }
+
+    private fun startRuntimeTicker() {
+        runtimeJob?.cancel()
+        runtimeSeconds = 0
+        updateRuntimeText(runtimeSeconds)
+        runtimeJob = activityScope.launch {
+            while (isActive && currentTask?.isActive == true && !stopRequested.get()) {
+                delay(1000)
+                runtimeSeconds += 1
+                updateRuntimeText(runtimeSeconds)
+            }
+        }
+    }
+
+    private fun stopRuntimeTicker(reset: Boolean) {
+        runtimeJob?.cancel()
+        runtimeJob = null
+        if (reset) {
+            runtimeSeconds = 0
+            updateRuntimeText(runtimeSeconds)
+        }
+    }
+
+    private fun updateRuntimeText(seconds: Int) {
+        binding.runtimeText.text = getString(R.string.runtime_seconds_format, seconds)
     }
 
     private enum class AsrProvider {

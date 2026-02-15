@@ -18,6 +18,8 @@
     <string name="dialog_source">MD源码（可编辑）</string>
     <string name="dialog_preview">MD预览</string>
     <string name="status_idle">等待处理</string>
+    <string name="runtime_seconds">运行时长 0s</string>
+    <string name="runtime_seconds_format">运行时长 %1$ds</string>
     <string name="copied">已复制</string>
     <string name="help">帮助</string>
     <string name="help_title">使用说明</string>

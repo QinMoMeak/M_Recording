@@ -368,3 +368,13 @@ amespace 与 pplicationId 均为 com.qinmomeak.recording。
 - 同步逻辑调整：`syncMediaStore()` 不再无条件清空历史，保留“已识别记录”（`isProcessed` 或转录/总结非空），避免导入的历史在同步时被清空。
 - 执行 `./gradlew :app:assembleDebug` 成功，APK：`app/build/outputs/apk/debug/app-debug.apk`。
 - 自动版本递增生效：下次构建版本为 `1.0.18`（`versionCode=18`）。
+
+### 2026-02-15
+- 应用图标更新：使用根目录图片 `285be7d2d38d3572f76f72e7700ccdd4.jpg` 生成并替换各分辨率图标资源（mdpi/hdpi/xhdpi/xxhdpi/xxxhdpi 的 `ic_launcher.png` 与 `ic_launcher_round.png`）。
+- 清理旧图标备份：原 `*.webp` 文件已移出资源目录，避免资源同名冲突（备份至 `docs/icon_backup`）。
+- 进度区新增“运行秒数累计”：
+  - `activity_main.xml` 新增 `runtimeText`；
+  - `MainActivity` 新增秒表计时任务，处理运行时每秒+1，停止/完成自动归零；
+  - 用于提示任务仍在执行、未卡死。
+- 执行 `./gradlew :app:assembleDebug` 成功，APK：`app/build/outputs/apk/debug/app-debug.apk`。
+- 自动版本递增生效：下次构建版本为 `1.0.19`（`versionCode=19`）。
