@@ -411,3 +411,31 @@ amespace 与 pplicationId 均为 com.qinmomeak.recording。
   - 补充发布更新地址。
 - 执行 `./gradlew :app:assembleDebug` 构建成功，APK：`app/build/outputs/apk/debug/app-debug.apk`。
 - 版本自动递增生效：下次构建版本为 `1.0.22`（`versionCode=22`）。
+
+### 2026-02-23
+- 按要求先读取 `docs/begin.md` 后开发：主界面右上角新增“设置”按钮（齿轮图标）。
+- 新增设置弹窗（`dialog_settings.xml`），支持：
+  - 配置 AI 总结 `AI_API_KEY` 覆盖值（留空则继续使用 `BuildConfig.AI_API_KEY`）。
+  - 勾选“视频提取后保存音频到本地”。
+  - 选择/清空提取音频保存目录（SAF `OpenDocumentTree` 持久授权）。
+- 新增配置存储类 `AppSettingsStore`：持久化 `AI_API_KEY` 覆盖、保存开关、目录 URI。
+- `MainActivity` 接入设置能力：
+  - `setupSettingsAction()` 打开并保存配置。
+  - 总结调用改为读取 `currentAiApiKey()`（优先设置值）。
+  - 视频提取后新增 `saveExtractedAudioIfNeeded()`：可保存到用户选定目录；若未设置目录则回落到应用默认目录 `externalFilesDir/extracted_audio`。
+- 主界面布局更新：`activity_main.xml` 增加 `settingsButton`，并调整右上角按钮排布（文件夹、设置、帮助）。
+- 文案更新：`strings.xml` 新增设置相关文本。
+- 执行 `./gradlew :app:assembleDebug` 构建成功，APK：`app/build/outputs/apk/debug/app-debug.apk`。
+- 自动版本递增生效：下次构建版本为 `1.0.23`（`versionCode=23`）。
+
+### 2026-02-23
+- 帮助文档增强：新增“AI 总结服务商”说明与文档地址 `https://platform.iflow.cn/docs`。
+- 帮助弹窗改为只读可复制、不可编辑、链接可点击跳转：
+  - 新增 `dialog_help.xml`，使用 `TextView` 展示帮助内容；
+  - `MainActivity.setupHelpAction()` 改为自定义弹窗，启用 `Linkify.WEB_URLS + LinkMovementMethod`；
+  - 新增“复制说明”按钮，支持一键复制完整帮助文本。
+- 文案与资源更新：
+  - `strings.xml` 新增 `help_copy`；
+  - `help_body` 已加入 iflow 文档链接段落。
+- 执行 `./gradlew :app:assembleDebug` 构建成功，APK：`app/build/outputs/apk/debug/app-debug.apk`。
+- 自动版本递增生效：下次构建版本为 `1.0.24`（`versionCode=24`）。

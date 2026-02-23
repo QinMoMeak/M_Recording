@@ -3,15 +3,21 @@
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.widget.ArrayAdapter
+import android.widget.CheckBox
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
+import androidx.documentfile.provider.DocumentFile
+import android.text.method.LinkMovementMethod
+import android.text.util.Linkify
 import android.text.InputType
 import android.view.LayoutInflater
 import android.widget.EditText
@@ -46,6 +52,8 @@ class MainActivity : AppCompatActivity(), AliyunAsrManager.Listener {
     private val stopRequested = AtomicBoolean(false)
     private var runtimeJob: Job? = null
     private var runtimeSeconds: Int = 0
+    private val settingsStore by lazy { AppSettingsStore(this) }
+    private var settingsDirTextView: TextView? = null
 
     private val audioExtractor by lazy { AudioExtractor(this) }
     private val ossUploader by lazy { OssUploaderService(this) }
@@ -85,6 +93,18 @@ class MainActivity : AppCompatActivity(), AliyunAsrManager.Listener {
         }
     }
 
+    private val pickSettingsFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        runCatching {
+            contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+        }
+        settingsStore.setExtractedAudioTreeUri(uri)
+        updateSettingsDirText()
+    }
+
     private val requestPermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) {
@@ -99,6 +119,7 @@ class MainActivity : AppCompatActivity(), AliyunAsrManager.Listener {
         setupInputLayer()
         setupTabs()
         setupHelpAction()
+        setupSettingsAction()
         setupStopAction()
         setupLibraryAction()
         setTaskRunning(false)
@@ -191,6 +212,10 @@ class MainActivity : AppCompatActivity(), AliyunAsrManager.Listener {
             setProgress(0, "音频提取失败")
             return
         }
+        val savedPath = withContext(Dispatchers.IO) { saveExtractedAudioIfNeeded(output) }
+        if (!savedPath.isNullOrBlank()) {
+            setProgress(18, "提取音频已保存")
+        }
         selectedAudioUri = Uri.fromFile(output)
         selectedMediaType = "audio"
         setProgress(20, "音频提取完成，自动上传识别")
@@ -281,7 +306,7 @@ $transcript
         val result = withContext(Dispatchers.IO) {
             summarizerService.summarize(
                 endpoint = BuildConfig.AI_ENDPOINT,
-                apiKey = BuildConfig.AI_API_KEY,
+                apiKey = currentAiApiKey(),
                 model = BuildConfig.AI_MODEL,
                 systemPrompt = systemPrompt,
                 userPrompt = userPrompt,
@@ -314,10 +339,60 @@ $transcript
 
     private fun setupHelpAction() {
         binding.helpButton.setOnClickListener {
+            val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_help, null, false)
+            val helpText = dialogView.findViewById<TextView>(R.id.helpText)
+            val copyButton = dialogView.findViewById<com.google.android.material.button.MaterialButton>(R.id.helpCopyButton)
+            val message = getString(R.string.help_body)
+
+            helpText.text = message
+            Linkify.addLinks(helpText, Linkify.WEB_URLS)
+            helpText.movementMethod = LinkMovementMethod.getInstance()
+
+            copyButton.setOnClickListener {
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("help", message))
+                Toast.makeText(this, getString(R.string.copied), Toast.LENGTH_SHORT).show()
+            }
+
             AlertDialog.Builder(this)
                 .setTitle(getString(R.string.help_title))
-                .setMessage(getString(R.string.help_body))
+                .setView(dialogView)
                 .setPositiveButton(android.R.string.ok, null)
+                .show()
+        }
+    }
+
+    private fun setupSettingsAction() {
+        binding.settingsButton.setOnClickListener {
+            val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_settings, null, false)
+            val keyInput = dialogView.findViewById<EditText>(R.id.settingsAiApiKeyInput)
+            val saveCheck = dialogView.findViewById<CheckBox>(R.id.settingsSaveExtractedCheck)
+            val dirText = dialogView.findViewById<TextView>(R.id.settingsSaveDirText)
+            val pickButton = dialogView.findViewById<com.google.android.material.button.MaterialButton>(R.id.settingsPickDirButton)
+            val clearButton = dialogView.findViewById<com.google.android.material.button.MaterialButton>(R.id.settingsClearDirButton)
+
+            keyInput.setText(settingsStore.getAiApiKeyOverride())
+            saveCheck.isChecked = settingsStore.isSaveExtractedAudioEnabled()
+            settingsDirTextView = dirText
+            updateSettingsDirText()
+
+            pickButton.setOnClickListener {
+                pickSettingsFolder.launch(settingsStore.getExtractedAudioTreeUri())
+            }
+            clearButton.setOnClickListener {
+                settingsStore.setExtractedAudioTreeUri(null)
+                updateSettingsDirText()
+            }
+
+            AlertDialog.Builder(this)
+                .setTitle(getString(R.string.settings_title))
+                .setView(dialogView)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(android.R.string.ok) { _, _ ->
+                    settingsStore.setAiApiKeyOverride(keyInput.text?.toString().orEmpty())
+                    settingsStore.setSaveExtractedAudioEnabled(saveCheck.isChecked)
+                    Toast.makeText(this, R.string.settings_saved, Toast.LENGTH_SHORT).show()
+                }
                 .show()
         }
     }
@@ -578,6 +653,55 @@ $transcript
         }
     }
 
+    private fun currentAiApiKey(): String {
+        val override = settingsStore.getAiApiKeyOverride()
+        return if (override.isNotBlank()) override else BuildConfig.AI_API_KEY
+    }
+
+    private fun updateSettingsDirText() {
+        val tv = settingsDirTextView ?: return
+        val uri = settingsStore.getExtractedAudioTreeUri()
+        tv.text = if (uri == null) {
+            getString(R.string.settings_save_dir_not_set)
+        } else {
+            getString(R.string.settings_save_dir_value, uri.toString())
+        }
+    }
+
+    private fun saveExtractedAudioIfNeeded(sourceFile: File): String? {
+        if (!settingsStore.isSaveExtractedAudioEnabled()) return null
+
+        val ext = sourceFile.extension.ifBlank { "m4a" }
+        val targetName = "extract_saved_${System.currentTimeMillis()}.$ext"
+        val treeUri = settingsStore.getExtractedAudioTreeUri()
+        if (treeUri != null) {
+            val tree = DocumentFile.fromTreeUri(this, treeUri)
+            if (tree != null && tree.canWrite()) {
+                val mime = when (ext.lowercase()) {
+                    "mp3" -> "audio/mpeg"
+                    "aac" -> "audio/aac"
+                    "wav" -> "audio/wav"
+                    else -> "audio/mp4"
+                }
+                val target = tree.createFile(mime, targetName)
+                if (target != null) {
+                    contentResolver.openOutputStream(target.uri)?.use { output ->
+                        sourceFile.inputStream().use { input -> input.copyTo(output) }
+                    }
+                    return target.uri.toString()
+                }
+            }
+        }
+
+        val fallbackDir = File(getExternalFilesDir(null), "extracted_audio")
+        if (!fallbackDir.exists()) fallbackDir.mkdirs()
+        val out = File(fallbackDir, targetName)
+        sourceFile.inputStream().use { input ->
+            out.outputStream().use { output -> input.copyTo(output) }
+        }
+        return out.absolutePath
+    }
+
     private fun launchTask(block: suspend () -> Unit) {
         currentTask?.cancel()
         stopRequested.set(false)
@@ -678,6 +802,7 @@ $transcript
         stopRequested.set(true)
         siliconFlowAsr.cancelCurrentRequest()
         stopRuntimeTicker(reset = false)
+        settingsDirTextView = null
         asrManager.release()
         super.onDestroy()
     }
